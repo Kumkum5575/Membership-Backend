@@ -9,7 +9,7 @@ const Invitation = require("./models/Invitation");
 
 const createAdmin = async () => {
     try {
-        // Check required environment variables
+        // Environment variables
         const adminEmail = process.env.SEED_ADMIN_EMAIL;
         const adminPassword = process.env.SEED_ADMIN_PASSWORD;
         const invitationCode = process.env.SEED_INVITATION_CODE;
@@ -21,17 +21,18 @@ const createAdmin = async () => {
         // Connect to database
         await connectDB();
 
-        // Check existing admin
+        // Hash new admin password
+        const hashedPassword = await bcrypt.hash(
+            adminPassword,
+            10
+        );
+
+        // Find existing admin
         let admin = await User.findOne({
             email: adminEmail
         });
 
         if (!admin) {
-            const hashedPassword = await bcrypt.hash(
-                adminPassword,
-                10
-            );
-
             admin = await User.create({
                 name: "Admin",
                 email: adminEmail,
@@ -42,7 +43,12 @@ const createAdmin = async () => {
 
             console.log("Admin created successfully");
         } else {
-            console.log("Admin already exists");
+            // Update existing admin password
+            admin.password = hashedPassword;
+
+            await admin.save();
+
+            console.log("Existing admin password updated successfully");
         }
 
         // Check existing invitation
@@ -58,7 +64,7 @@ const createAdmin = async () => {
                 status: "ACTIVE"
             });
 
-            console.log("Invitation created successfully");
+            console.log("New invitation created successfully");
         } else {
             console.log("Invitation already exists");
         }
