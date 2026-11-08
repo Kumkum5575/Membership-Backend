@@ -136,8 +136,13 @@ const revokeInvitation = async (req, res) => {
     }
 };
 
-// GET ALL APPLICATIONS WITH SEARCH AND FILTER
+// GET ALL APPLICATIONS WITH PERFORMANCE TIMING
 const getApplications = async (req, res) => {
+    const requestStartedAt = Date.now();
+
+    let userSearchMs = 0;
+    let applicationQueryMs = 0;
+
     try {
         const {
             search,
@@ -148,6 +153,7 @@ const getApplications = async (req, res) => {
 
         const filter = {};
 
+        // STATUS FILTER
         if (status && status !== "ALL") {
             const allowedStatuses = [
                 "PENDING",
@@ -165,6 +171,7 @@ const getApplications = async (req, res) => {
             filter.applicationStatus = status;
         }
 
+        // PRIORITY FILTER
         if (priority && priority !== "ALL") {
             const allowedPriorities = [
                 "Critical",
@@ -182,6 +189,61 @@ const getApplications = async (req, res) => {
             filter.priority = priority;
         }
 
+        // SEARCH BY USER NAME OR EMAIL
+        if (search && search.trim()) {
+
+            const searchText = search.trim();
+
+            const escapedSearch = searchText.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                "\\$&"
+            );
+
+            const searchRegex = new RegExp(escapedSearch, "i");
+
+            const userSearchStartedAt = Date.now();
+
+            const matchingUsers = await User.find({
+                $or: [
+                    { name: searchRegex },
+                    { email: searchRegex }
+                ]
+            })
+                .select("_id")
+                .lean();
+
+            userSearchMs = Date.now() - userSearchStartedAt;
+
+            const matchingUserIds = matchingUsers.map(
+                user => user._id
+            );
+
+            if (matchingUserIds.length === 0) {
+                console.log("APPLICATION PERFORMANCE:", {
+                    userSearchMs,
+                    applicationQueryMs,
+                    totalMs: Date.now() - requestStartedAt,
+                    resultCount: 0
+                });
+
+                return res.status(200).json([]);
+            }
+
+            filter.user = {
+                $in: matchingUserIds
+            };
+        }
+
+        // SORTING
+        let sortOption = { createdAt: -1 };
+
+        if (sort === "oldest") {
+            sortOption = { createdAt: 1 };
+        }
+
+        // FETCH APPLICATIONS
+        const applicationQueryStartedAt = Date.now();
+
         let applications = await Application.find(filter)
             .populate(
                 "user",
@@ -197,28 +259,14 @@ const getApplications = async (req, res) => {
             })
             .populate("reviewedBy", "name email")
             .populate("reviewHistory.performedBy", "name email role")
-            .sort({ createdAt: -1 });
+            .sort(sortOption)
+            .lean();
 
-        // SEARCH BY NAME OR EMAIL
-        if (search && search.trim()) {
-            const searchText = search.trim().toLowerCase();
-
-            applications = applications.filter((application) => {
-                const name =
-                    application.user?.name?.toLowerCase() || "";
-
-                const email =
-                    application.user?.email?.toLowerCase() || "";
-
-                return (
-                    name.includes(searchText) ||
-                    email.includes(searchText)
-                );
-            });
-        }
+        applicationQueryMs = Date.now() - applicationQueryStartedAt;
 
         // PRIORITY SORTING
         if (sort === "priority") {
+
             const priorityOrder = {
                 Critical: 1,
                 High: 2,
@@ -227,21 +275,32 @@ const getApplications = async (req, res) => {
             };
 
             applications.sort((a, b) => {
-                return priorityOrder[a.priority] - priorityOrder[b.priority];
+                return (
+                    priorityOrder[a.priority] -
+                    priorityOrder[b.priority]
+                );
             });
         }
 
-        // OLDEST FIRST
-        if (sort === "oldest") {
-            applications.sort(
-                (a, b) =>
-                    new Date(a.createdAt) - new Date(b.createdAt)
-            );
-        }
+        // PERFORMANCE LOGS
+        console.log("APPLICATION PERFORMANCE:", {
+            userSearchMs,
+            applicationQueryMs,
+            totalMs: Date.now() - requestStartedAt,
+            resultCount: applications.length
+        });
 
         return res.status(200).json(applications);
 
     } catch (error) {
+        console.error("Get Applications Error:", error);
+
+        console.log("APPLICATION PERFORMANCE ERROR:", {
+            userSearchMs,
+            applicationQueryMs,
+            totalMs: Date.now() - requestStartedAt
+        });
+
         return res.status(500).json({
             message: error.message
         });

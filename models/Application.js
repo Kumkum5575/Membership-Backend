@@ -32,13 +32,11 @@ const applicationSchema = new mongoose.Schema({
         default: ""
     },
 
-    // Admin ke notes
     adminNotes: {
         type: String,
         default: ""
     },
 
-    // Application review history
     reviewHistory: [
         {
             action: {
@@ -74,7 +72,6 @@ const applicationSchema = new mongoose.Schema({
         }
     ],
 
-    // Last reviewer
     reviewedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
@@ -82,5 +79,20 @@ const applicationSchema = new mongoose.Schema({
     }
 
 }, { timestamps: true });
+
+
+// Performance indexes
+applicationSchema.index({ createdAt: -1 });
+
+applicationSchema.index({
+    applicationStatus: 1,
+    createdAt: -1
+});
+
+applicationSchema.index({
+    priority: 1,
+    createdAt: -1
+});
+
 
 module.exports = mongoose.model("Application", applicationSchema);
